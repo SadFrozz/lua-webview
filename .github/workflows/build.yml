@@ -19,7 +19,6 @@ jobs:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
-          # ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: рекурсивно загружаем все субмодули
           submodules: 'recursive'
 
       - name: Set up MSYS2 for MinGW GCC
@@ -63,7 +62,6 @@ jobs:
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
-          # ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: рекурсивно загружаем все субмодули
           submodules: 'recursive'
 
       - name: Install Lua for headers
