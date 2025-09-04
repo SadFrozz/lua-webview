@@ -54,6 +54,8 @@ jobs:
     name: Build for macOS (${{ matrix.arch }})
     runs-on: macos-latest
     strategy:
+      # Отключаем fail-fast, чтобы видеть ошибки в обеих сборках, если они возникнут
+      fail-fast: false
       matrix:
         arch: [x86_64, arm64] # Создаем матрицу для двух архитектур
 
@@ -66,16 +68,16 @@ jobs:
       - name: Install Lua for headers
         run: brew install lua
 
-      - name: Compile webview.c directly for ${{ matrix.arch }}
+      - name: Compile webview directly for ${{ matrix.arch }}
         run: |
           clang -shared -dynamiclib \
                 -o webview-${{ matrix.arch }}.dylib \
                 -arch ${{ matrix.arch }} \
                 -ObjC -DWEBVIEW_COCOA=1 \
-                -I$(brew --prefix lua)/include/lua \
+                -I$(brew --prefix lua)/include \
                 -Iwebview-c \
                 -framework WebKit \
-                webview.c
+                webview.c webview-c/webview-cocoa.c
 
       - name: Upload macOS ${{ matrix.arch }} Artifact
         uses: actions/upload-artifact@v4
