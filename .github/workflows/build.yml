@@ -108,4 +108,12 @@ jobs:
 
       - name: Verify Universal Binary
         run: |
-          echo "Verifying the
+          echo "Verifying the created universal binary..."
+          lipo -info webview.dylib
+          # Вывод должен содержать "Architectures in the fat file: webview.dylib are: x86_64 arm64"
+
+      - name: Upload Universal macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webview-macos-universal
+          path: webview.dylib
