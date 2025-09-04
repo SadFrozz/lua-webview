@@ -1,107 +1,117 @@
 #.github/workflows/build.yml
 
-name: Build lua-webview
+name: Build Cross-Platform Binaries
 
 on:
-  # Запуск при отправке коммитов в ветку main
   push:
-    branches: [ main ]
-  # Запуск при создании или обновлении pull request, нацеленного на ветку main
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
-  # Позволяет запускать рабочий процесс вручную из интерфейса GitHub
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  # --- ЗАДАНИЕ 1: СБОРКА ДЛЯ WINDOWS X64 ---
+  # --- ЗАДАНИЕ 1: СБОРКА ДЛЯ WINDOWS X64 С ИСПОЛЬЗОВАНИЕМ ROCK.MK И MINGW ---
   build-windows:
     name: Build for Windows (x64)
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive' # Клонируем субмодули, включая webview
+          submodules: 'recursive'
 
-      - name: Set up MSBuild
-        uses: microsoft/setup-msbuild@v1.1
+      - name: Set up MSYS2 for MinGW GCC
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-gcc
 
-      - name: Install dependencies (Lua and CMake)
-        run: choco install lua cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-
-      - name: Configure CMake
-        run: cmake -S. -B build -A x64
-
-      - name: Build with MSBuild
-        run: cmake --build build --config Release
+      - name: Download Lua 5.4 source for headers
+        shell: msys2 {0}
+        run: |
+          curl -L -R -O https://www.lua.org/ftp/lua-5.4.6.tar.gz
+          tar zxf lua-5.4.6.tar.gz
+          
+      - name: Compile lua-webview using rock.mk
+        shell: msys2 {0}
+        run: |
+          # Передаем пути к заголовочным файлам Lua и другие параметры в Makefile
+          make -f rock.mk PLAT=windows CC=gcc LD=gcc LUA_INCDIR=$(pwd)/lua-5.4.6/src
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
           name: webview-windows-x64
-          path: build/Release/webview.dll
+          path: webview.dll
 
-  # --- ЗАДАНИЕ 2: ПАРАЛЛЕЛЬНАЯ СБОРКА ДЛЯ MACOS (INTEL И APPLE SILICON) ---
+  # --- ЗАДАНИЕ 2: ПАРАЛЛЕЛЬНАЯ СБОРКА ДЛЯ MACOS (INTEL И APPLE SILICON) В ОБХОД ROCK.MK ---
   build-macos:
     name: Build for macOS (${{ matrix.arch }})
-    runs-on: macos-latest # В настоящее время это x86_64 runner
+    runs-on: macos-latest
     strategy:
       matrix:
         arch: [x86_64, arm64] # Создаем матрицу для двух архитектур
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      - name: Install dependencies (CMake)
-        run: brew install cmake
+      - name: Install Lua for headers
+        run: brew install lua
 
-      - name: Configure CMake for ${{ matrix.arch }}
-        run: cmake -S. -B build -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
-
-      - name: Build with CMake
-        run: cmake --build build --config Release
+      - name: Compile webview.c directly for ${{ matrix.arch }}
+        run: |
+          clang -shared -dynamiclib \
+                -o webview-${{ matrix.arch }}.dylib \
+                -arch ${{ matrix.arch }} \
+                -ObjC -DWEBVIEW_COCOA=1 \
+                -I$(brew --prefix lua)/include/lua \
+                -Iwebview-c \
+                -framework WebKit \
+                webview.c
 
       - name: Upload macOS ${{ matrix.arch }} Artifact
         uses: actions/upload-artifact@v4
         with:
           name: webview-macos-${{ matrix.arch }}
-          path: build/libwebview.dylib
+          path: webview-${{ matrix.arch }}.dylib
 
   # --- ЗАДАНИЕ 3: ОБЪЕДИНЕНИЕ БИНАРНИКОВ MACOS В УНИВЕРСАЛЬНЫЙ ФАЙЛ ---
   package-macos:
     name: Package Universal macOS Binary
     runs-on: macos-latest
-    needs: build-macos # Это задание зависит от успешного завершения обеих сборок build-macos
+    needs: build-macos # Запускается только после успешного завершения обеих сборок build-macos
 
     steps:
       - name: Download x86_64 artifact
         uses: actions/download-artifact@v4
         with:
           name: webview-macos-x86_64
-          path: build-x86_64
 
       - name: Download arm64 artifact
         uses: actions/download-artifact@v4
         with:
           name: webview-macos-arm64
-          path: build-arm64
 
       - name: Create Universal Binary with lipo
         run: |
-          lipo -create -output libwebview.dylib build-x86_64/libwebview.dylib build-arm64/libwebview.dylib
+          lipo -create -output webview.dylib webview-x86_64.dylib webview-arm64.dylib
 
       - name: Verify Universal Binary
         run: |
           echo "Verifying the created universal binary..."
-          lipo -info libwebview.dylib
-          # Ожидаемый вывод должен содержать "x86_64 arm64"
+          lipo -info webview.dylib
+          # Вывод должен содержать "Architectures in the fat file: webview.dylib are: x86_64 arm64"
 
       - name: Upload Universal macOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: webview-macos-universal
-          path: libwebview.dylib
+          path: webview.dylib
